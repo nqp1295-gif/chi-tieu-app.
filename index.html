@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Finance Tool PRO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<style>
+body{font-family:sans-serif;padding:10px;background:#f5f5f5}
+h2{margin:5px 0}
+
+.top-icons{
+  position:fixed;
+  top:10px;
+  right:10px;
+  display:flex;
+  gap:10px;
+}
+.icon-btn{
+  background:#333;color:#fff;border:none;
+  padding:10px;border-radius:50%;cursor:pointer;
+}
+
+.panel{
+  display:none;
+  position:fixed;
+  top:60px;
+  right:10px;
+  background:#fff;
+  padding:10px;
+  border-radius:10px;
+  box-shadow:0 0 10px rgba(0,0,0,0.2);
+  width:300px;
+  max-height:80vh;
+  overflow:auto;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  background:#fff;
+}
+th,td{
+  border:1px solid #ddd;
+  padding:5px;
+  text-align:center;
+}
+
+button{margin:3px}
+canvas{max-height:250px}
+</style>
+</head>
+
+<body>
+
+<h2>💰 Finance Tool PRO</h2>
+
+<!-- ICONS -->
+<div class="top-icons">
+  <button class="icon-btn" onclick="togglePanel('importPanel')">📥</button>
+  <button class="icon-btn" onclick="togglePanel('filterPanel')">🔍</button>
+  <button class="icon-btn" onclick="togglePanel('chartPanel')">📊</button>
+</div>
+
+<!-- IMPORT -->
+<div class="panel" id="importPanel">
+<h3>Import Excel</h3>
+<input type="file" id="fileInput">
+<button onclick="importExcel()">Import</button>
+</div>
+
+<!-- FILTER -->
+<div class="panel" id="filterPanel">
+<h3>Lọc dữ liệu</h3>
+<input id="fCategory" placeholder="Danh mục">
+<input id="fPerson" placeholder="Người">
+<button onclick="applyFilter()">Lọc</button>
+<button onclick="resetFilter()">Reset</button>
+</div>
+
+<!-- CHART -->
+<div class="panel" id="chartPanel">
+<h3>Biểu đồ</h3>
+
+<input type="date" id="chartFrom">
+<input type="date" id="chartTo">
+<input id="chartCategory" placeholder="Danh mục">
+<input id="chartPerson" placeholder="Người">
+
+<br>
+<button onclick="filterChart()">Lọc</button>
+<button onclick="resetChart()">Reset</button>
+
+<hr>
+
+<button onclick="quickFilter('today')">Today</button>
+<button onclick="quickFilter('week')">Week</button>
+<button onclick="quickFilter('month')">Month</button>
+
+<hr>
+
+<h4>📊 Top chi tiêu</h4>
+<div id="topSpending"></div>
+
+<h4>📈 So sánh tháng</h4>
+<div id="compareMonth"></div>
+
+<h4>🎯 % danh mục</h4>
+<div id="percentCategory"></div>
+
+<canvas id="pie"></canvas>
+<canvas id="bar"></canvas>
+</div>
+
+<!-- TABLE -->
+<table>
+<thead>
+<tr>
+<th><input type="checkbox" onclick="toggleAll(this)"></th>
+<th>Ngày</th>
+<th>Danh mục</th>
+<th>Số tiền</th>
+<th>Người</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+
+<button onclick="deleteSelected()">🗑 Xóa đã chọn</button>
+
+<script>
+
+let data = JSON.parse(localStorage.getItem('data')) || [];
+let pieChart, barChart;
+
+function save(){
+  localStorage.setItem('data', JSON.stringify(data));
+}
+
+function render(list = data){
+  let html="";
+  list.forEach((i,idx)=>{
+    html+=`
+    <tr>
+      <td><input type="checkbox" class="rowCheck" data-id="${idx}"></td>
+      <td>${i.date}</td>
+      <td>${i.category}</td>
+      <td>${i.amount}</td>
+      <td>${i.person}</td>
+    </tr>`;
+  });
+  tableBody.innerHTML=html;
+}
+
+function togglePanel(id){
+  document.querySelectorAll('.panel').forEach(p=>p.style.display='none');
+  let el=document.getElementById(id);
+  el.style.display = el.style.display==='block'?'none':'block';
+}
+
+function importExcel(){
+  let file=document.getElementById('fileInput').files[0];
+  let reader=new FileReader();
+
+  reader.onload=function(e){
+    let wb = XLSX.read(e.target.result,{type:'binary'});
+    let sheet = wb.Sheets[wb.SheetNames[0]];
+    let rows = XLSX.utils.sheet_to_json(sheet);
+
+    rows.forEach(r=>{
+      data.push({
+        date:r.date || r.Date,
+        category:r.category || r.Category,
+        amount:Number(r.amount || r.Amount),
+        person:r.person || r.Person
+      });
+    });
+
+    save();
+    render();
+    drawChart(data);
+    alert("Import OK");
+  };
+
+  reader.readAsBinaryString(file);
+}
+
+function applyFilter(){
+  let c=fCategory.value.toLowerCase();
+  let p=fPerson.value.toLowerCase();
+
+  let filtered = data.filter(i=>
+    (!c || i.category.toLowerCase().includes(c)) &&
+    (!p || i.person.toLowerCase().includes(p))
+  );
+
+  render(filtered);
+}
+
+function resetFilter(){
+  fCategory.value="";
+  fPerson.value="";
+  render();
+}
+
+function toggleAll(el){
+  document.querySelectorAll('.rowCheck').forEach(c=>c.checked=el.checked);
+}
+
+function deleteSelected(){
+  let checked = document.querySelectorAll('.rowCheck:checked');
+
+  let ids = Array.from(checked).map(c=>Number(c.dataset.id));
+
+  data = data.filter((_,idx)=>!ids.includes(idx));
+
+  save();
+  render();
+  drawChart(data);
+}
+
+function filterChart(){
+  let from=chartFrom.value;
+  let to=chartTo.value;
+  let c=chartCategory.value.toLowerCase();
+  let p=chartPerson.value.toLowerCase();
+
+  let filtered=data.filter(i=>{
+    let d=i.date;
+
+    if(from && d<from) return false;
+    if(to && d>to) return false;
+    if(c && !i.category.toLowerCase().includes(c)) return false;
+    if(p && !i.person.toLowerCase().includes(p)) return false;
+
+    return true;
+  });
+
+  drawChart(filtered);
+}
+
+function resetChart(){
+  chartFrom.value="";
+  chartTo.value="";
+  chartCategory.value="";
+  chartPerson.value="";
+  drawChart(data);
+}
+
+function quickFilter(type){
+  let now=new Date();
+  let filtered=data;
+
+  if(type==='today'){
+    let t=now.toISOString().slice(0,10);
+    filtered=data.filter(i=>i.date===t);
+  }
+
+  if(type==='week'){
+    let weekAgo=new Date();
+    weekAgo.setDate(now.getDate()-7);
+    filtered=data.filter(i=>new Date(i.date)>=weekAgo);
+  }
+
+  if(type==='month'){
+    let m=now.getMonth();
+    filtered=data.filter(i=>new Date(i.date).getMonth()===m);
+  }
+
+  drawChart(filtered);
+}
+
+function drawChart(list){
+
+  let sumByCat={};
+  let sumByPerson={};
+
+  list.forEach(i=>{
+    sumByCat[i.category]=(sumByCat[i.category]||0)+i.amount;
+    sumByPerson[i.person]=(sumByPerson[i.person]||0)+i.amount;
+  });
+
+  let cats=Object.keys(sumByCat);
+  let values=Object.values(sumByCat);
+
+  if(pieChart) pieChart.destroy();
+  pieChart=new Chart(pie,{
+    type:'pie',
+    data:{labels:cats,datasets:[{data:values}]}
+  });
+
+  if(barChart) barChart.destroy();
+  barChart=new Chart(bar,{
+    type:'bar',
+    data:{labels:Object.keys(sumByPerson),datasets:[{data:Object.values(sumByPerson)}]}
+  });
+
+  // TOP
+  let top = Object.entries(sumByCat).sort((a,b)=>b[1]-a[1])[0];
+  topSpending.innerHTML = top ? `${top[0]}: ${top[1]}` : "";
+
+  // %
+  let total = values.reduce((a,b)=>a+b,0);
+  percentCategory.innerHTML = cats.map((c,i)=>
+    `${c}: ${(values[i]/total*100).toFixed(1)}%`
+  ).join("<br>");
+
+  // MONTH COMPARE
+  let now=new Date();
+  let thisMonth=0, lastMonth=0;
+
+  list.forEach(i=>{
+    let d=new Date(i.date);
+    if(d.getMonth()===now.getMonth()) thisMonth+=i.amount;
+    if(d.getMonth()===now.getMonth()-1) lastMonth+=i.amount;
+  });
+
+  compareMonth.innerHTML = `Tháng này: ${thisMonth} <br> Tháng trước: ${lastMonth}`;
+}
+
+render();
+drawChart(data);
+
+</script>
+
+</body>
+</html>
